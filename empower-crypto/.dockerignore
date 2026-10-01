@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+postman/
+infra/
+README.md
+
+.build/
+.aws-sam/

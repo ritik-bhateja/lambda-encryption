@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Hello Lambda behind an HTTP API. Encrypted request_key in, response_key + response_value out, both with the vendor's shared AES-256 key
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [x86_64]
+    Handler: app.handler
+    MemorySize: 256
+    Timeout: 10
+    Environment:
+      Variables:
+        # One secret per vendor. The X-Vendor-Id header picks which one.
+        PAYLOAD_KEY_SECRET_TEMPLATE: hello-udit-test/{vendor}/response-key
+        PAYLOAD_NONCE_TABLE: !Ref NonceTable
+
+Resources:
+  VendorKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: hello-udit-test/HELLO_VENDOR/response-key
+      Description: Shared AES-256 response key for HELLO_VENDOR. The vendor holds a copy. Never print or log it.
+      GenerateSecretString:
+        SecretStringTemplate: "{}"
+        GenerateStringKey: key_hex
+        # Only 0-9 and a-f are left, so 64 characters is exactly 32 bytes of hex.
+        PasswordLength: 64
+        ExcludePunctuation: true
+        ExcludeUppercase: true
+        ExcludeCharacters: ghijklmnopqrstuvwxyz
+      Tags:
+        - { Key: Name, Value: hello-udit-test-vendor-key }
+        - { Key: Environment, Value: development }
+        - { Key: Owner, Value: udit.mittal }
+        - { Key: Project, Value: empower-care }
+
+  NonceTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: hello-udit-test-nonce
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: nonce_id, AttributeType: S }
+      KeySchema:
+        - { AttributeName: nonce_id, KeyType: HASH }
+      TimeToLiveSpecification:
+        AttributeName: ttl_epoch
+        Enabled: true
+      Tags:
+        - { Key: Name, Value: hello-udit-test-nonce }
+        - { Key: Environment, Value: development }
+        - { Key: Owner, Value: udit.mittal }
+        - { Key: Project, Value: empower-care }
+
+  CryptoLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: hello-udit-test-payload-crypto
+      ContentUri: ../payload-crypto/.build/layer
+      CompatibleRuntimes: [python3.12]
+      CompatibleArchitectures: [x86_64]
+
+  HelloFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: hello-udit-test
+      CodeUri: src/
+      Layers: [!Ref CryptoLayer]
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:hello-udit-test/*"
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt NonceTable.Arn
+      Tags:
+        Name: hello-udit-test
+        Environment: development
+        Owner: udit.mittal
+        Project: empower-care
+      Events:
+        Hello:
+          Type: HttpApi
+          Properties:
+            Path: /hello
+            Method: POST
+
+  HelloOpenFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: hello-udit-test-open
+      Description: DEV ONLY. Seals hello requests and opens replies with the shared key. Invoke only, no API route
+      CodeUri: src/
+      Handler: dev_open.handler
+      Layers: [!Ref CryptoLayer]
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:hello-udit-test/*"
+      Tags:
+        Name: hello-udit-test-open
+        Environment: development
+        Owner: udit.mittal
+        Project: empower-care
+
+Outputs:
+  HelloUrl:
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/hello"
+  OpenFunctionName:
+    Value: !Ref HelloOpenFunction
+  VendorKeySecretName:
+    Value: hello-udit-test/HELLO_VENDOR/response-key

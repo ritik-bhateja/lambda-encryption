@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+.venv*/
+venv/
+env/
+
+# Build artifacts
+.build/
+.aws-sam/
+build/
+dist/
+*.zip
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+
+# Local/secret config (do not commit real keys)
+*.env
+.env*
+samconfig.local.toml
+
+# Office temp files
+~$*

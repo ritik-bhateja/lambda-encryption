@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: payload_crypto shared pieces, deployed once per account and region. The layer and the replay table every encrypted API uses.
+
+Parameters:
+  Env:
+    Type: String
+    Default: dev
+  SecretPrefix:
+    Type: String
+    Default: payload-keys
+    Description: Vendor secrets are <SecretPrefix>/<VENDOR>
+
+Resources:
+  PayloadCryptoLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub payload-crypto-${Env}
+      Description: payload_crypto decorators + cryptography 43.0.1
+      ContentUri: ../.build/layer
+      CompatibleRuntimes: [python3.12]
+      CompatibleArchitectures: [x86_64]
+      RetentionPolicy: Retain          # APIs pinned to an old version keep working
+
+  NonceTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub payload-crypto-nonce-${Env}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: nonce_id, AttributeType: S }
+      KeySchema:
+        - { AttributeName: nonce_id, KeyType: HASH }
+      TimeToLiveSpecification: { AttributeName: ttl_epoch, Enabled: true }
+
+  # Attach this to every encrypted API's function role.
+  PayloadCryptoPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub payload-crypto-${Env}
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretPrefix}/*"
+          - Effect: Allow
+            Action: dynamodb:PutItem
+            Resource: !GetAtt NonceTable.Arn
+
+Outputs:
+  LayerArn:
+    Value: !Ref PayloadCryptoLayer
+    Export: { Name: !Sub "payload-crypto-${Env}-layer" }
+  NonceTableName:
+    Value: !Ref NonceTable
+    Export: { Name: !Sub "payload-crypto-${Env}-nonce-table" }
+  PolicyArn:
+    Value: !Ref PayloadCryptoPolicy
+    Export: { Name: !Sub "payload-crypto-${Env}-policy" }
+  SecretTemplate:
+    Value: !Sub "${SecretPrefix}/{vendor}"
+    Export: { Name: !Sub "payload-crypto-${Env}-secret-template" }

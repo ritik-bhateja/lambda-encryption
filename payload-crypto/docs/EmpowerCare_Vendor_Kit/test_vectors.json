@@ -1,0 +1,33 @@
+{
+  "_note": "PUBLIC TEST KEY. Never use it for real traffic. Use these to check your implementation byte for byte.",
+  "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "vendor_id": "ACME",
+  "key_id": "ACME-v1",
+  "request": {
+    "inputs": {
+      "payload_json": "{\"order_id\":\"ORD-1001\",\"amount\":2500,\"currency\":\"INR\"}",
+      "label_json": "{\"alg\":\"A256GCM\",\"cid\":\"ACME\",\"iat\":1790412345,\"jti\":\"0f1e2d3c4b5a69788796a5b4c3d2e1f0\",\"kid\":\"ACME-v1\",\"mtd\":\"POST\",\"pth\":\"/orders\",\"v\":1}",
+      "iv_hex": "a0a1a2a3a4a5a6a7a8a9aaab"
+    },
+    "expected": {
+      "label_segment": "eyJhbGciOiJBMjU2R0NNIiwiY2lkIjoiQUNNRSIsImlhdCI6MTc5MDQxMjM0NSwianRpIjoiMGYxZTJkM2M0YjVhNjk3ODg3OTZhNWI0YzNkMmUxZjAiLCJraWQiOiJBQ01FLXYxIiwibXRkIjoiUE9TVCIsInB0aCI6Ii9vcmRlcnMiLCJ2IjoxfQ",
+      "request_key": "eyJhbGciOiJBMjU2R0NNIiwiY2lkIjoiQUNNRSIsImlhdCI6MTc5MDQxMjM0NSwianRpIjoiMGYxZTJkM2M0YjVhNjk3ODg3OTZhNWI0YzNkMmUxZjAiLCJraWQiOiJBQ01FLXYxIiwibXRkIjoiUE9TVCIsInB0aCI6Ii9vcmRlcnMiLCJ2IjoxfQ.oKGio6Slpqeoqaqr.nToTXyGucOALAaXpJTWSml2daSCjlW5O_WNJ8xHfVzvgQ3fPgwAwSC3uYaZqA6HDZVIIGkCt.R7gmmw8dUB-C_o_VrB-4_w",
+      "http_body": "{\"request_key\": \"eyJhbGciOiJBMjU2R0NNIiwiY2lkIjoiQUNNRSIsImlhdCI6MTc5MDQxMjM0NSwianRpIjoiMGYxZTJkM2M0YjVhNjk3ODg3OTZhNWI0YzNkMmUxZjAiLCJraWQiOiJBQ01FLXYxIiwibXRkIjoiUE9TVCIsInB0aCI6Ii9vcmRlcnMiLCJ2IjoxfQ.oKGio6Slpqeoqaqr.nToTXyGucOALAaXpJTWSml2daSCjlW5O_WNJ8xHfVzvgQ3fPgwAwSC3uYaZqA6HDZVIIGkCt.R7gmmw8dUB-C_o_VrB-4_w\"}",
+      "http_headers": {
+        "Content-Type": "application/json",
+        "X-Vendor-Id": "ACME"
+      }
+    }
+  },
+  "response": {
+    "http_body": {
+      "response_key": "eyJhbGciOiJBMjU2R0NNS1ciLCJjaWQiOiJBQ01FIiwiZWRlayI6InNQaVgxOGZJSnU0b2FVMFNnaHhZNXZ6RFU0LU1VcThLbW5QN3VvZk56d1kiLCJlbmMiOiJBMjU2R0NNIiwiaWF0IjoxNzkwNDEyMzQ2LCJqdGkiOiIxZjJlM2Q0YzViNmE3OTg4MDc5NmE1YjRjM2QyZTFmMCIsImtla19pZCI6IkFDTUUtdjEiLCJtdGQiOiJQT1NUIiwicHRoIjoiL29yZGVycyIsInYiOjEsIndpdiI6IndNSEN3OFRGeHNmSXljckwiLCJ3dGFnIjoiRlhqelR2cmFncFhocWRIRlJCRXdDdyIsInppcCI6IkRFRiJ9",
+      "response_value": "0NHS09TV1tfY2drbHQYIhnbZW_uibt-ce1vm3pDUGUPvgv9Xc68Dt40Jp2JO1OxzwxSfmwPqq6LlCpS_iqb9DIZ1B-WyTWU"
+    },
+    "expected": {
+      "dek_hex": "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0",
+      "deflated_hex": "ab56ca2f4a492d8acf4c51b252f20f72d13534303054d2512a2e492c292d068a3907b93a86b8ba28d50200",
+      "reply_json": "{\"order_id\":\"ORD-1001\",\"status\":\"CREATED\"}"
+    }
+  }
+}

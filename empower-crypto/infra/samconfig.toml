@@ -1,0 +1,15 @@
+# Defaults for `sam deploy` from the project root:
+#   sam deploy --config-file infra/samconfig.toml
+# infra/scripts/deploy.sh passes these explicitly and is the recommended path.
+version = 0.1
+
+[default.deploy.parameters]
+template_file = "infra/template.yaml"
+stack_name = "empower-care-sample-crypto"
+region = "ap-south-1"
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+confirm_changeset = true
+fail_on_empty_changeset = false
+parameter_overrides = "Env=sample AuthMode=sample EnableDevHelpers=false"
+tags = "project=empower-care purpose=payload-encryption-sample"

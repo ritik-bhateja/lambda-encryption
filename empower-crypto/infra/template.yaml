@@ -1,0 +1,583 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Empower Care payload encryption, v3.0 design, SAMPLE STACK. A complete,
+  self-contained deployment: API Gateway REST API with a REQUEST authorizer,
+  the shared crypto layer, the key service, a sample business Lambda, the
+  nonce store, the master seed under a dedicated KMS key, and alarms.
+  Requests carry one request_value. Responses carry response_key and
+  response_value. Not for production traffic: tokens are sample HS256 tokens.
+
+# --------------------------------------------------------------------------
+Parameters:
+  Env:
+    Type: String
+    Default: sample
+    AllowedPattern: '^[a-z0-9-]{2,12}$'
+    Description: Short environment name used in every resource name. Never prod.
+  AuthMode:
+    Type: String
+    Default: sample
+    AllowedValues: [sample, anz]
+    Description: >
+      sample = HS256 tokens signed with a secret in Secrets Manager, minted by
+      infra/scripts/issue_token.py. anz = validate with the ANZ auth service.
+  AnzValidateUrl:
+    Type: String
+    Default: ''
+    Description: ANZ tokenvalidate endpoint. Required when AuthMode is anz, or every call is denied.
+  EnableDevHelpers:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >
+      Creates a separate API with /dev/seal and /dev/open so Postman can drive
+      the stack. A seal and open oracle for the caller's own keys. Keep false
+      anywhere real vendors connect.
+  MaxKeyIssuesPerEpoch:
+    Type: Number
+    Default: 50
+    MinValue: 1
+    Description: Successful key fetches allowed per vendor per key lifetime.
+
+Rules:
+  NeverProd:
+    Assertions:
+      - Assert: !Not [!Equals [!Ref Env, prod]]
+        AssertDescription: This is the sample stack. It must not be deployed with Env=prod.
+
+Conditions:
+  IsSampleAuth: !Equals [!Ref AuthMode, sample]
+  CreateDevHelpers: !And
+    - !Equals [!Ref EnableDevHelpers, 'true']
+    - !Not [!Equals [!Ref Env, prod]]
+
+# --------------------------------------------------------------------------
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [x86_64]
+    Timeout: 10
+    MemorySize: 256
+    Tracing: Active
+
+# --------------------------------------------------------------------------
+Resources:
+
+  # ---- key material ------------------------------------------------------
+
+  PayloadCmk:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub Protects the empower-care-${Env} payload master seed
+      EnableKeyRotation: true
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AccountAdministers
+            Effect: Allow
+            Principal: {AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'}
+            Action: 'kms:*'
+            Resource: '*'
+
+  PayloadCmkAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/empower-care-${Env}-cmk-payload
+      TargetKeyId: !Ref PayloadCmk
+
+  # No fixed name, so a delete and redeploy never collides with a secret that
+  # is still inside its recovery window.
+  PayloadSeed:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub empower-care-${Env} master seed. Every vendor key is derived from it. Never read by humans.
+      KmsKeyId: !Ref PayloadCmk
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: seed_b64
+        PasswordLength: 44
+        ExcludePunctuation: true
+
+  SampleTokenSecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: IsSampleAuth
+    Properties:
+      Description: !Sub empower-care-${Env} HS256 secret for SAMPLE tokens. Sample stacks only.
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: secret
+        PasswordLength: 48
+        ExcludePunctuation: true
+
+  # ---- tables ------------------------------------------------------------------
+
+  KeyRoleTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub empower_care_${Env}_dydb_keyrolemapping
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: client_id, AttributeType: S}
+      KeySchema:
+        - {AttributeName: client_id, KeyType: HASH}
+      SSESpecification: {SSEEnabled: true}
+
+  TokenLimitTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub empower_care_${Env}_valid_token_limit
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: token, AttributeType: S}
+        - {AttributeName: client_id, AttributeType: S}
+      KeySchema:
+        - {AttributeName: token, KeyType: HASH}
+        - {AttributeName: client_id, KeyType: RANGE}
+      TimeToLiveSpecification: {AttributeName: ttl_epoch, Enabled: true}
+      SSESpecification: {SSEEnabled: true}
+
+  NonceTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub empower_care_${Env}_dydb_payload_nonce
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: nonce_id, AttributeType: S}
+      KeySchema:
+        - {AttributeName: nonce_id, KeyType: HASH}
+      TimeToLiveSpecification: {AttributeName: ttl_epoch, Enabled: true}
+      SSESpecification: {SSEEnabled: true}
+
+  KeyIssueTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub empower_care_${Env}_key_issue_count
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: client_ref, AttributeType: S}
+        - {AttributeName: epoch_id, AttributeType: N}
+      KeySchema:
+        - {AttributeName: client_ref, KeyType: HASH}
+        - {AttributeName: epoch_id, KeyType: RANGE}
+      TimeToLiveSpecification: {AttributeName: ttl_epoch, Enabled: true}
+      SSESpecification: {SSEEnabled: true}
+
+  # ---- the shared layer --------------------------------------------------------
+  # Built by infra/scripts/build_layer.sh: empower_crypto.py plus cryptography
+  # wheels for Lambda python3.12 on x86_64.
+
+  CryptoLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub empower-care-${Env}-layer-payloadcrypto
+      Description: Payload crypto for Empower Care APIs, v3.0 design
+      ContentUri: ../.build/layer/
+      CompatibleRuntimes: [python3.12]
+      CompatibleArchitectures: [x86_64]
+      RetentionPolicy: Delete
+
+  # ---- functions ----------------------------------------------------------------
+
+  RequestValidatorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub empower_care_${Env}_lambda_requestvalidator
+      CodeUri: ../lambdas/request_validator/
+      Handler: handler.lambda_handler
+      Environment:
+        Variables:
+          AUTH_MODE: !Ref AuthMode
+          SAMPLE_TOKEN_SECRET_ID: !If [IsSampleAuth, !Ref SampleTokenSecret, '']
+          ANZ_VALIDATE_URL: !Ref AnzValidateUrl
+          KEYROLE_TABLE: !Ref KeyRoleTable
+          TOKEN_LIMIT_TABLE: !Ref TokenLimitTable
+          CLIENT_KEY_HASH: sha256
+      Policies:
+        - DynamoDBReadPolicy: {TableName: !Ref KeyRoleTable}
+        - DynamoDBCrudPolicy: {TableName: !Ref TokenLimitTable}
+        - !If
+          - IsSampleAuth
+          - AWSSecretsManagerGetSecretValuePolicy: {SecretArn: !Ref SampleTokenSecret}
+          - !Ref AWS::NoValue
+
+  CryptoKeysFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub empower_care_${Env}_lambda_cryptokeys
+      CodeUri: ../lambdas/cryptokeys/
+      Handler: handler.lambda_handler
+      Layers: [!Ref CryptoLayer]
+      Environment:
+        Variables:
+          PAYLOAD_SEED_SECRET_ID: !Ref PayloadSeed
+          KEY_ISSUE_TABLE: !Ref KeyIssueTable
+          MAX_ISSUES_PER_EPOCH: !Ref MaxKeyIssuesPerEpoch
+          CRYPTO_DEFAULT_MODE: required
+      Policies:
+        - AWSSecretsManagerGetSecretValuePolicy: {SecretArn: !Ref PayloadSeed}
+        - KMSDecryptPolicy: {KeyId: !Ref PayloadCmk}
+        - DynamoDBCrudPolicy: {TableName: !Ref KeyIssueTable}
+
+  SampleEmployeeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub empower_care_${Env}_sample_employee_api
+      CodeUri: ../lambdas/sample_employee/
+      Handler: handler.lambda_handler
+      Layers: [!Ref CryptoLayer]
+      Environment:
+        Variables:
+          PAYLOAD_SEED_SECRET_ID: !Ref PayloadSeed
+          PAYLOAD_NONCE_TABLE: !Ref NonceTable
+          CRYPTO_DEFAULT_MODE: required
+      Policies:
+        - AWSSecretsManagerGetSecretValuePolicy: {SecretArn: !Ref PayloadSeed}
+        - KMSDecryptPolicy: {KeyId: !Ref PayloadCmk}
+        - DynamoDBCrudPolicy: {TableName: !Ref NonceTable}
+
+  # ---- the API --------------------------------------------------------------------
+  # Non-proxy (type: aws) integrations with a VTL mapping template, matching the
+  # existing Empower Care gateway. The response template copies response_code
+  # into the HTTP status, so CRY errors come back as real 400s.
+  # Headers are deliberately NOT copied into the event, so the bearer token
+  # never reaches business code or its logs.
+
+  CryptoApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub empower-care-${Env}-crypto-api
+      StageName: !Ref Env
+      EndpointConfiguration: {Type: REGIONAL}
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          ThrottlingRateLimit: 20
+          ThrottlingBurstLimit: 40
+        - ResourcePath: '/~1crypto~1session-key'
+          HttpMethod: POST
+          ThrottlingRateLimit: 2
+          ThrottlingBurstLimit: 5
+      DefinitionBody:
+        swagger: '2.0'
+        info: {title: !Sub 'empower-care-${Env}-crypto-api', version: '3.0'}
+        schemes: [https]
+        securityDefinitions:
+          RequestValidator:
+            type: apiKey
+            name: Authorization
+            in: header
+            x-amazon-apigateway-authtype: custom
+            x-amazon-apigateway-authorizer:
+              type: request
+              identitySource: method.request.header.Authorization
+              authorizerResultTtlInSeconds: 0
+              authorizerUri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RequestValidatorFunction.Arn}/invocations'
+        paths:
+          /crypto/session-key:
+            post:
+              consumes: [application/json]
+              produces: [application/json]
+              security: [{RequestValidator: []}]
+              responses:
+                '200': {description: OK}
+                '400': {description: Rejected}
+                '429': {description: Too many key fetches}
+                '500': {description: Platform error}
+              x-amazon-apigateway-integration:
+                type: aws
+                httpMethod: POST
+                uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CryptoKeysFunction.Arn}/invocations'
+                passthroughBehavior: never
+                requestTemplates:
+                  application/json: |
+                    {
+                      "body-json" : $input.json('$'),
+                      "context" : {
+                        "request-id"       : "$context.requestId",
+                        "resource-path"    : "$context.resourcePath",
+                        "stage"            : "$context.stage",
+                        "http-method"      : "$context.httpMethod",
+                        "source-ip"        : "$context.identity.sourceIp",
+                        "x-Hasura-Role"    : "$context.authorizer.role_id",
+                        "X-Hasura-User-Id" : "$context.authorizer.allowed_ids",
+                        "client-ref"       : "$context.authorizer.client_ref",
+                        "crypto-mode"      : "$context.authorizer.crypto_mode",
+                        "key-version"      : "$context.authorizer.key_version",
+                        "epoch-seconds"    : "$context.authorizer.epoch_seconds",
+                        "source-ips"       : "$context.authorizer.source_ips"
+                      }
+                    }
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseTemplates:
+                      application/json: |
+                        #set($root = $input.path('$'))
+                        #if($root.response_code && $root.response_code != 200)
+                        #set($context.responseOverride.status = $root.response_code)
+                        #end
+                        $input.json('$')
+                  '.+':
+                    statusCode: '500'
+                    responseTemplates:
+                      application/json: '{"response_code": 500, "response_error_code": "PLATFORM500", "response_error_message": "Internal error", "encrypted": false, "response_data": {}}'
+          /employee:
+            post:
+              consumes: [application/json]
+              produces: [application/json]
+              security: [{RequestValidator: []}]
+              responses:
+                '200': {description: OK}
+                '400': {description: Rejected}
+                '403': {description: Forbidden}
+                '500': {description: Platform error}
+              x-amazon-apigateway-integration:
+                type: aws
+                httpMethod: POST
+                uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SampleEmployeeFunction.Arn}/invocations'
+                passthroughBehavior: never
+                requestTemplates:
+                  application/json: |
+                    {
+                      "body-json" : $input.json('$'),
+                      "context" : {
+                        "request-id"       : "$context.requestId",
+                        "resource-path"    : "$context.resourcePath",
+                        "stage"            : "$context.stage",
+                        "http-method"      : "$context.httpMethod",
+                        "source-ip"        : "$context.identity.sourceIp",
+                        "x-Hasura-Role"    : "$context.authorizer.role_id",
+                        "X-Hasura-User-Id" : "$context.authorizer.allowed_ids",
+                        "client-ref"       : "$context.authorizer.client_ref",
+                        "crypto-mode"      : "$context.authorizer.crypto_mode",
+                        "key-version"      : "$context.authorizer.key_version",
+                        "epoch-seconds"    : "$context.authorizer.epoch_seconds",
+                        "source-ips"       : "$context.authorizer.source_ips"
+                      }
+                    }
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseTemplates:
+                      application/json: |
+                        #set($root = $input.path('$'))
+                        #if($root.response_code && $root.response_code != 200)
+                        #set($context.responseOverride.status = $root.response_code)
+                        #end
+                        $input.json('$')
+                  '.+':
+                    statusCode: '500'
+                    responseTemplates:
+                      application/json: '{"response_code": 500, "response_error_code": "PLATFORM500", "response_error_message": "Internal error", "encrypted": false, "response_data": {}}'
+
+  AuthorizerInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref RequestValidatorFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${CryptoApi}/authorizers/*'
+
+  CryptoKeysInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CryptoKeysFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${CryptoApi}/*/POST/crypto/session-key'
+
+  SampleEmployeeInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref SampleEmployeeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${CryptoApi}/*/POST/employee'
+
+  # ---- optional dev helpers, a separate API so the main API never has /dev ---------
+
+  DevHelpersFunction:
+    Type: AWS::Serverless::Function
+    Condition: CreateDevHelpers
+    Properties:
+      FunctionName: !Sub empower_care_${Env}_dev_helpers
+      CodeUri: ../lambdas/dev_helpers/
+      Handler: handler.lambda_handler
+      Layers: [!Ref CryptoLayer]
+      Environment:
+        Variables:
+          PAYLOAD_SEED_SECRET_ID: !Ref PayloadSeed
+      Policies:
+        - AWSSecretsManagerGetSecretValuePolicy: {SecretArn: !Ref PayloadSeed}
+        - KMSDecryptPolicy: {KeyId: !Ref PayloadCmk}
+
+  DevApi:
+    Type: AWS::Serverless::Api
+    Condition: CreateDevHelpers
+    Properties:
+      Name: !Sub empower-care-${Env}-dev-helpers-api
+      StageName: !Ref Env
+      EndpointConfiguration: {Type: REGIONAL}
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          ThrottlingRateLimit: 5
+          ThrottlingBurstLimit: 10
+      DefinitionBody:
+        swagger: '2.0'
+        info: {title: !Sub 'empower-care-${Env}-dev-helpers-api', version: '3.0'}
+        schemes: [https]
+        securityDefinitions:
+          RequestValidator:
+            type: apiKey
+            name: Authorization
+            in: header
+            x-amazon-apigateway-authtype: custom
+            x-amazon-apigateway-authorizer:
+              type: request
+              identitySource: method.request.header.Authorization
+              authorizerResultTtlInSeconds: 0
+              authorizerUri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RequestValidatorFunction.Arn}/invocations'
+        paths:
+          /dev/seal:
+            post:
+              consumes: [application/json]
+              produces: [application/json]
+              security: [{RequestValidator: []}]
+              responses: {'200': {description: OK}, '400': {description: Rejected}}
+              x-amazon-apigateway-integration:
+                type: aws
+                httpMethod: POST
+                uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DevHelpersFunction.Arn}/invocations'
+                passthroughBehavior: never
+                requestTemplates:
+                  application/json: |
+                    {
+                      "body-json" : $input.json('$'),
+                      "context" : {
+                        "request-id"    : "$context.requestId",
+                        "resource-path" : "$context.resourcePath",
+                        "http-method"   : "$context.httpMethod",
+                        "client-ref"    : "$context.authorizer.client_ref",
+                        "crypto-mode"   : "$context.authorizer.crypto_mode",
+                        "key-version"   : "$context.authorizer.key_version",
+                        "epoch-seconds" : "$context.authorizer.epoch_seconds"
+                      }
+                    }
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseTemplates:
+                      application/json: |
+                        #set($root = $input.path('$'))
+                        #if($root.response_code && $root.response_code != 200)
+                        #set($context.responseOverride.status = $root.response_code)
+                        #end
+                        $input.json('$')
+          /dev/open:
+            post:
+              consumes: [application/json]
+              produces: [application/json]
+              security: [{RequestValidator: []}]
+              responses: {'200': {description: OK}, '400': {description: Rejected}}
+              x-amazon-apigateway-integration:
+                type: aws
+                httpMethod: POST
+                uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DevHelpersFunction.Arn}/invocations'
+                passthroughBehavior: never
+                requestTemplates:
+                  application/json: |
+                    {
+                      "body-json" : $input.json('$'),
+                      "context" : {
+                        "request-id"    : "$context.requestId",
+                        "resource-path" : "$context.resourcePath",
+                        "http-method"   : "$context.httpMethod",
+                        "client-ref"    : "$context.authorizer.client_ref",
+                        "crypto-mode"   : "$context.authorizer.crypto_mode",
+                        "key-version"   : "$context.authorizer.key_version",
+                        "epoch-seconds" : "$context.authorizer.epoch_seconds"
+                      }
+                    }
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseTemplates:
+                      application/json: |
+                        #set($root = $input.path('$'))
+                        #if($root.response_code && $root.response_code != 200)
+                        #set($context.responseOverride.status = $root.response_code)
+                        #end
+                        $input.json('$')
+
+  DevAuthorizerInvokePermission:
+    Type: AWS::Lambda::Permission
+    Condition: CreateDevHelpers
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref RequestValidatorFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${DevApi}/authorizers/*'
+
+  DevHelpersInvokePermission:
+    Type: AWS::Lambda::Permission
+    Condition: CreateDevHelpers
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref DevHelpersFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${DevApi}/*/POST/dev/*'
+
+  # ---- alarms ----------------------------------------------------------------------
+
+  ExcessiveKeyFetchAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub empower-care-${Env}-excessive-key-fetch
+      AlarmDescription: A vendor should fetch keys about once a day. A spike is a signal.
+      Namespace: AWS/Lambda
+      MetricName: Invocations
+      Dimensions:
+        - {Name: FunctionName, Value: !Ref CryptoKeysFunction}
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  DecryptFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub empower-care-${Env}-decrypt-failures
+      AlarmDescription: Spike in rejected encrypted requests, from a broken vendor or an attack.
+      Namespace: EmpowerCare/Crypto
+      MetricName: DecryptFailure
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 20
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+# --------------------------------------------------------------------------
+Outputs:
+  ApiUrl:
+    Description: Base URL. Call {ApiUrl}/crypto/session-key and {ApiUrl}/employee
+    Value: !Sub 'https://${CryptoApi}.execute-api.${AWS::Region}.amazonaws.com/${Env}'
+  DevApiUrl:
+    Condition: CreateDevHelpers
+    Description: Dev helpers for Postman. {DevApiUrl}/dev/seal and {DevApiUrl}/dev/open
+    Value: !Sub 'https://${DevApi}.execute-api.${AWS::Region}.amazonaws.com/${Env}'
+  KeyRoleTableName:
+    Description: Vendor records. infra/scripts/seed.py writes the sample vendors here
+    Value: !Ref KeyRoleTable
+  SampleTokenSecretArn:
+    Condition: IsSampleAuth
+    Description: HS256 secret used by infra/scripts/issue_token.py
+    Value: !Ref SampleTokenSecret
+  CryptoLayerArn:
+    Description: Pin this exact version in business Lambdas. Never latest.
+    Value: !Ref CryptoLayer

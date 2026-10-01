@@ -1,0 +1,25 @@
+services:
+  api:
+    build: .
+    container_name: empower-crypto-sandbox
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      PUBLIC_BASE_URL: "http://localhost:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # One-shot end to end check. Run with:  docker compose --profile test up demo
+  demo:
+    build: .
+    profiles: ["test"]
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      EMPOWER_HOST: "http://api:8080"
+    command: ["python", "client/demo.py"]

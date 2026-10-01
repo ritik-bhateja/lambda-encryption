@@ -1,0 +1,926 @@
+{
+  "info": {
+    "name": "Empower Care - AWS sample stack",
+    "description": "Drives the DEPLOYED sample stack through API Gateway. Deploy with DEV_HELPERS=true.\n\nSet api_url, dev_url, token and plain_token in the environment first, see the header of postman/make_aws_collection.py. Tokens last one hour.\n\nRequests carry request_value. Replies carry response_key and response_value. Errors come back as real HTTP 400s with the CRY code in response_error_code.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01. Get today's keys",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/crypto/session-key",
+          "host": [
+            "{{api_url}}"
+          ],
+          "path": [
+            "crypto",
+            "session-key"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "pm.test('two 32 byte keys that differ', () => {",
+              "  pm.expect(b.request_encryption_key).to.have.lengthOf(43);",
+              "  pm.expect(b.kek_response).to.have.lengthOf(43);",
+              "  pm.expect(b.request_encryption_key).to.not.eql(b.kek_response);",
+              "});",
+              "pm.test('algorithms stated', () => {",
+              "  pm.expect(b.request_alg).to.eql('A256GCM');",
+              "  pm.expect(b.response_alg).to.eql('A256GCMKW');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02. Employee, encrypted (happy path)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/employee",
+          "host": [
+            "{{api_url}}"
+          ],
+          "path": [
+            "employee"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_value\": \"{{happy_value}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.sendRequest({",
+              "  url: pm.variables.get('dev_url') + '/dev/seal', method: 'POST',",
+              "  header: { 'Content-Type': 'application/json',",
+              "            'Authorization': 'Bearer ' + pm.variables.get('token') },",
+              "  body: { mode: 'raw', raw: JSON.stringify({ path: '/employee', method: 'POST', payload: {\"employee_code\": \"EMP001\"} }) }",
+              "}, (err, res) => {",
+              "  if (err || res.code !== 200) { console.error('dev/seal failed', err || res.code); return; }",
+              "  const v = res.json().request_value;",
+              "  pm.collectionVariables.set('happy_value', v);",
+              "});"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('reply is response_key + response_value', () => {",
+              "  pm.expect(b.encrypted).to.be.true;",
+              "  pm.expect(b.response_key).to.be.a('string');",
+              "  pm.expect(b.response_value).to.be.a('string');",
+              "});",
+              "pm.test('no plain data in the reply', () => pm.expect(pm.response.text()).to.not.include('Asha'));",
+              "pm.sendRequest({",
+              "  url: pm.variables.get('dev_url') + '/dev/open', method: 'POST',",
+              "  header: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + pm.variables.get('token') },",
+              "  body: { mode: 'raw', raw: JSON.stringify({ response_key: b.response_key, response_value: b.response_value }) }",
+              "}, (err, res) => {",
+              "  const clear = res.json();",
+              "  console.log('opened response_value:', JSON.stringify(clear.response_data));",
+              "  pm.test('response_value opens to the employee', () => {",
+              "    pm.expect(clear.response_data.employee_information_master.employee_full_name).to.eql('Asha Menon');",
+              "  });",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "03. Replay the same request_value (CRY409)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/employee",
+          "host": [
+            "{{api_url}}"
+          ],
+          "path": [
+            "employee"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_value\": \"{{happy_value}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+              "pm.test('rejected with CRY409', () => pm.expect(b.response_error_code).to.eql('CRY409'));",
+              "pm.test('error readable, nothing leaked', () => {",
+              "  pm.expect(b.encrypted).to.be.false;",
+              "  pm.expect(b).to.not.have.property('response_key');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "04. Label from A on data from B (CRY422)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/employee",
+          "host": [
+            "{{api_url}}"
+          ],
+          "path": [
+            "employee"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_value\": \"{{spliced_value}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.sendRequest({",
+              "  url: pm.variables.get('dev_url') + '/dev/seal', method: 'POST',",
+              "  header: { 'Content-Type': 'application/json',",
+              "            'Authorization': 'Bearer ' + pm.variables.get('token') },",
+              "  body: { mode: 'raw', raw: JSON.stringify({ path: '/employee', method: 'POST', payload: {\"employee_code\": \"EMP001\"} }) }",
+              "}, (err, res) => {",
+              "  if (err || res.code !== 200) { console.error('dev/seal failed', err || res.code); return; }",
+              "  const v = res.json().request_value;",
+              "  pm.collectionVariables.set('a_value', v);",
+              "  pm.sendRequest({",
+              "    url: pm.variables.get('dev_url') + '/dev/seal', method: 'POST',",
+              "    header: { 'Content-Type': 'application/json',",
+              "              'Authorization': 'Bearer ' + pm.variables.get('token') },",
+              "    body: { mode: 'raw', raw: JSON.stringify({ path: '/employee', method: 'POST', payload: {\"employee_code\": \"EMP002\"} }) }",
+              "  }, (err, res) => {",
+              "    if (err || res.code !== 200) { console.error('dev/seal failed', err || res.code); return; }",
+              "    const v = res.json().request_value;",
+              "    pm.collectionVariables.set('b_value', v);",
+              "    const a = pm.collectionVariables.get('a_value').split('.');",
+              "    const b = v.split('.');",
+              "    pm.collectionVariables.set('spliced_value', [a[0], b[1], b[2], b[3]].join('.'));",
+              "  });",
+              "});"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+              "pm.test('rejected with CRY422', () => pm.expect(b.response_error_code).to.eql('CRY422'));",
+              "pm.test('error readable, nothing leaked', () => {",
+              "  pm.expect(b.encrypted).to.be.false;",
+              "  pm.expect(b).to.not.have.property('response_key');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "05. Edit one second in the label (CRY422)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/employee",
+          "host": [
+            "{{api_url}}"
+          ],
+          "path": [
+            "employee"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_value\": \"{{edited_value}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.sendRequest({",
+              "  url: pm.variables.get('dev_url') + '/dev/seal', method: 'POST',",
+              "  header: { 'Content-Type': 'application/json',",
+              "            'Authorization': 'Bearer ' + pm.variables.get('token') },",
+              "  body: { mode: 'raw', raw: JSON.stringify({ path: '/employee', method: 'POST', payload: {\"employee_code\": \"EMP001\"} }) }",
+              "}, (err, res) => {",
+              "  if (err || res.code !== 200) { console.error('dev/seal failed', err || res.code); return; }",
+              "  const v = res.json().request_value;",
+              "  pm.collectionVariables.set('e_value', v);",
+              "  const p = v.split('.');",
+              "  const s = p[0].replace(/-/g, '+').replace(/_/g, '/');",
+              "  const label = JSON.parse(atob(s + '='.repeat((4 - s.length % 4) % 4)));",
+              "  label.iat = label.iat - 1;",
+              "  p[0] = btoa(JSON.stringify(label)).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "  pm.collectionVariables.set('edited_value', p.join('.'));",
+              "});"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+              "pm.test('rejected with CRY422', () => pm.expect(b.response_error_code).to.eql('CRY422'));",
+              "pm.test('error readable, nothing leaked', () => {",
+              "  pm.expect(b.encrypted).to.be.false;",
+              "  pm.expect(b).to.not.have.property('response_key');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06. Tampered ciphertext (CRY422)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/employee",
+          "host": [
+            "{{api_url}}"
+          ],
+          "path": [
+            "employee"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_value\": \"{{tampered_value}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.sendRequest({",
+              "  url: pm.variables.get('dev_url') + '/dev/seal', method: 'POST',",
+              "  header: { 'Content-Type': 'application/json',",
+              "            'Authorization': 'Bearer ' + pm.variables.get('token') },",
+              "  body: { mode: 'raw', raw: JSON.stringify({ path: '/employee', method: 'POST', payload: {\"employee_code\": \"EMP001\"} }) }",
+              "}, (err, res) => {",
+              "  if (err || res.code !== 200) { console.error('dev/seal failed', err || res.code); return; }",
+              "  const v = res.json().request_value;",
+              "  pm.collectionVariables.set('t_value', v);",
+              "  const p = v.split('.');",
+              "  p[2] = p[2].slice(0, -2) + (p[2].endsWith('AA') ? 'BB' : 'AA');",
+              "  pm.collectionVariables.set('tampered_value', p.join('.'));",
+              "});"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+              "pm.test('rejected with CRY422', () => pm.expect(b.response_error_code).to.eql('CRY422'));",
+              "pm.test('error readable, nothing leaked', () => {",
+              "  pm.expect(b.encrypted).to.be.false;",
+              "  pm.expect(b).to.not.have.property('response_key');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "07. Sealed for /policy, sent to /employee (CRY412)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/employee",
+          "host": [
+            "{{api_url}}"
+          ],
+          "path": [
+            "employee"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_value\": \"{{policy_value}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.sendRequest({",
+              "  url: pm.variables.get('dev_url') + '/dev/seal', method: 'POST',",
+              "  header: { 'Content-Type': 'application/json',",
+              "            'Authorization': 'Bearer ' + pm.variables.get('token') },",
+              "  body: { mode: 'raw', raw: JSON.stringify({ path: '/policy', method: 'POST', payload: {\"employee_code\": \"EMP001\"} }) }",
+              "}, (err, res) => {",
+              "  if (err || res.code !== 200) { console.error('dev/seal failed', err || res.code); return; }",
+              "  const v = res.json().request_value;",
+              "  pm.collectionVariables.set('policy_value', v);",
+              "});"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+              "pm.test('rejected with CRY412', () => pm.expect(b.response_error_code).to.eql('CRY412'));",
+              "pm.test('error readable, nothing leaked', () => {",
+              "  pm.expect(b.encrypted).to.be.false;",
+              "  pm.expect(b).to.not.have.property('response_key');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "08. Plain JSON while encryption is required (CRY426)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/employee",
+          "host": [
+            "{{api_url}}"
+          ],
+          "path": [
+            "employee"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"employee_code\": \"EMP001\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+              "pm.test('rejected with CRY426', () => pm.expect(b.response_error_code).to.eql('CRY426'));",
+              "pm.test('error readable, nothing leaked', () => {",
+              "  pm.expect(b.encrypted).to.be.false;",
+              "  pm.expect(b).to.not.have.property('response_key');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "09. Old v2.0 shape with request_key (CRY400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/employee",
+          "host": [
+            "{{api_url}}"
+          ],
+          "path": [
+            "employee"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_key\": \"eyJ...\",\n  \"request_value\": \"{{old_value}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.sendRequest({",
+              "  url: pm.variables.get('dev_url') + '/dev/seal', method: 'POST',",
+              "  header: { 'Content-Type': 'application/json',",
+              "            'Authorization': 'Bearer ' + pm.variables.get('token') },",
+              "  body: { mode: 'raw', raw: JSON.stringify({ path: '/employee', method: 'POST', payload: {\"employee_code\": \"EMP001\"} }) }",
+              "}, (err, res) => {",
+              "  if (err || res.code !== 200) { console.error('dev/seal failed', err || res.code); return; }",
+              "  const v = res.json().request_value;",
+              "  pm.collectionVariables.set('old_value', v);",
+              "});"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+              "pm.test('rejected with CRY400', () => pm.expect(b.response_error_code).to.eql('CRY400'));",
+              "pm.test('error readable, nothing leaked', () => {",
+              "  pm.expect(b.encrypted).to.be.false;",
+              "  pm.expect(b).to.not.have.property('response_key');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10. Extra plain field beside request_value (CRY400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/employee",
+          "host": [
+            "{{api_url}}"
+          ],
+          "path": [
+            "employee"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_value\": \"{{x_value}}\",\n  \"employee_code\": \"EMP002\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.sendRequest({",
+              "  url: pm.variables.get('dev_url') + '/dev/seal', method: 'POST',",
+              "  header: { 'Content-Type': 'application/json',",
+              "            'Authorization': 'Bearer ' + pm.variables.get('token') },",
+              "  body: { mode: 'raw', raw: JSON.stringify({ path: '/employee', method: 'POST', payload: {\"employee_code\": \"EMP001\"} }) }",
+              "}, (err, res) => {",
+              "  if (err || res.code !== 200) { console.error('dev/seal failed', err || res.code); return; }",
+              "  const v = res.json().request_value;",
+              "  pm.collectionVariables.set('x_value', v);",
+              "});"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+              "pm.test('rejected with CRY400', () => pm.expect(b.response_error_code).to.eql('CRY400'));",
+              "pm.test('error readable, nothing leaked', () => {",
+              "  pm.expect(b.encrypted).to.be.false;",
+              "  pm.expect(b).to.not.have.property('response_key');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "11. Malformed request_value (CRY400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/employee",
+          "host": [
+            "{{api_url}}"
+          ],
+          "path": [
+            "employee"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_value\": \"only.three.parts\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+              "pm.test('rejected with CRY400', () => pm.expect(b.response_error_code).to.eql('CRY400'));",
+              "pm.test('error readable, nothing leaked', () => {",
+              "  pm.expect(b.encrypted).to.be.false;",
+              "  pm.expect(b).to.not.have.property('response_key');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "12. Unknown employee (200 plus EMP404)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/employee",
+          "host": [
+            "{{api_url}}"
+          ],
+          "path": [
+            "employee"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_value\": \"{{m_value}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.sendRequest({",
+              "  url: pm.variables.get('dev_url') + '/dev/seal', method: 'POST',",
+              "  header: { 'Content-Type': 'application/json',",
+              "            'Authorization': 'Bearer ' + pm.variables.get('token') },",
+              "  body: { mode: 'raw', raw: JSON.stringify({ path: '/employee', method: 'POST', payload: {\"employee_code\": \"EMP999\"} }) }",
+              "}, (err, res) => {",
+              "  if (err || res.code !== 200) { console.error('dev/seal failed', err || res.code); return; }",
+              "  const v = res.json().request_value;",
+              "  pm.collectionVariables.set('m_value', v);",
+              "});"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('functional miss still on a 200', () => {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(b.response_error_code).to.eql('EMP404');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "13. Vendor not migrated yet (crypto_mode off)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plain_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/employee",
+          "host": [
+            "{{api_url}}"
+          ],
+          "path": [
+            "employee"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"employee_code\": \"EMP002\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('unmigrated vendor unaffected', () => {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(b.response_data.employee_information_master.employee_id).to.eql('EMP002');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "14. No Authorization header (401)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/employee",
+          "host": [
+            "{{api_url}}"
+          ],
+          "path": [
+            "employee"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('stopped at the gateway', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "15. Forged token signature (403)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{forged_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/employee",
+          "host": [
+            "{{api_url}}"
+          ],
+          "path": [
+            "employee"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const t = pm.variables.get('token');",
+              "pm.collectionVariables.set('forged_token', t.slice(0, t.lastIndexOf('.') + 1) + 'eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg');"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('authorizer denies', () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "happy_value",
+      "value": ""
+    },
+    {
+      "key": "a_value",
+      "value": ""
+    },
+    {
+      "key": "b_value",
+      "value": ""
+    },
+    {
+      "key": "spliced_value",
+      "value": ""
+    },
+    {
+      "key": "e_value",
+      "value": ""
+    },
+    {
+      "key": "edited_value",
+      "value": ""
+    },
+    {
+      "key": "t_value",
+      "value": ""
+    },
+    {
+      "key": "tampered_value",
+      "value": ""
+    },
+    {
+      "key": "policy_value",
+      "value": ""
+    },
+    {
+      "key": "old_value",
+      "value": ""
+    },
+    {
+      "key": "x_value",
+      "value": ""
+    },
+    {
+      "key": "m_value",
+      "value": ""
+    },
+    {
+      "key": "forged_token",
+      "value": ""
+    }
+  ]
+}

@@ -1,0 +1,184 @@
+{
+  "merchant": "MERCH_ENCRYPTED",
+  "path": "/employee",
+  "payload": {
+    "employee_code": "EMP001"
+  },
+  "key_service": {
+    "status": 200,
+    "body": {
+      "epoch_seconds": 86400,
+      "grace_seconds": 900,
+      "kek_id": "bfp_Gl4ezWPgplI2yEtDYF",
+      "kek_response": "ahEm6SiusB1BtYuEVMF8QhKk8nQgL0lvCfhS97NMZ5E",
+      "next_rotation_at": "2026-09-26T05:30:00+05:30",
+      "not_after": "2026-09-26T05:45:00+05:30",
+      "not_before": "2026-09-25T05:30:00+05:30",
+      "request_alg": "A256GCM",
+      "request_encryption_key": "I2na2ZTSo44YA_SkcwxLiIUwfEhr4FxghIxp_sj6zNw",
+      "request_id": "e8904515-a04d-4ebe-af8e-be0979884282",
+      "response_alg": "A256GCMKW",
+      "response_code": 200,
+      "response_error_code": "",
+      "response_error_message": "",
+      "response_message": "Request Successfully processed",
+      "time_taken": 10.7,
+      "timestamp": "2026-09-25T16:14:08.958492+05:30"
+    }
+  },
+  "request": {
+    "label": {
+      "v": 1,
+      "alg": "A256GCM",
+      "kid": "bfp_Gl4ezWPgplI2yEtDYF",
+      "cid": "MERCH_ENCRYPTED",
+      "pth": "/employee",
+      "mtd": "POST",
+      "iat": 1790333048,
+      "jti": "ac8eabdcd73b44f28f1cf96a438e7096"
+    },
+    "label_seg": "eyJhbGciOiJBMjU2R0NNIiwiY2lkIjoiTUVSQ0hfRU5DUllQVEVEIiwiaWF0IjoxNzkwMzMzMDQ4LCJqdGkiOiJhYzhlYWJkY2Q3M2I0NGYyOGYxY2Y5NmE0MzhlNzA5NiIsImtpZCI6ImJmcF9HbDRleldQZ3BsSTJ5RXREWUYiLCJtdGQiOiJQT1NUIiwicHRoIjoiL2VtcGxveWVlIiwidiI6MX0",
+    "plaintext": "{\"employee_code\":\"EMP001\"}",
+    "plaintext_bytes": 26,
+    "iv_hex": "70b7bcb562ca4b957161af1f",
+    "iv_b64u": "cLe8tWLKS5VxYa8f",
+    "ciphertext_hex": "72de02e15c3565f728912397fe14357da6b7b912768be80db068",
+    "ciphertext_b64u": "ct4C4Vw1ZfcokSOX_hQ1faa3uRJ2i-gNsGg",
+    "tag_hex": "60ab4c01e07be2f4ffa2d1d64a269113",
+    "tag_b64u": "YKtMAeB74vT_otHWSiaREw",
+    "request_value": "eyJhbGciOiJBMjU2R0NNIiwiY2lkIjoiTUVSQ0hfRU5DUllQVEVEIiwiaWF0IjoxNzkwMzMzMDQ4LCJqdGkiOiJhYzhlYWJkY2Q3M2I0NGYyOGYxY2Y5NmE0MzhlNzA5NiIsImtpZCI6ImJmcF9HbDRleldQZ3BsSTJ5RXREWUYiLCJtdGQiOiJQT1NUIiwicHRoIjoiL2VtcGxveWVlIiwidiI6MX0.cLe8tWLKS5VxYa8f.ct4C4Vw1ZfcokSOX_hQ1faa3uRJ2i-gNsGg.YKtMAeB74vT_otHWSiaREw",
+    "request_value_chars": 299,
+    "label_chars": 223
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "encrypted": true,
+      "request_id": "eaa5a7d0-fb32-4d88-937f-3b49a3ac74af",
+      "response_code": 200,
+      "response_error_code": "",
+      "response_error_message": "",
+      "response_key": "eyJhbGciOiJBMjU2R0NNS1ciLCJjaWQiOiJNRVJDSF9FTkNSWVBURUQiLCJlZGVrIjoibmVzR0Z5Q3M4UXhLZzV1VXNxcmVocXlsaHFMQVhFUWhIaTZoLWt2WVNtMCIsImVuYyI6IkEyNTZHQ00iLCJpYXQiOjE3OTAzMzMwNDgsImp0aSI6IjU2MGNiOWEyM2NkYzRkNDA4ODgyYzZmM2Y0ZGU1YzhmIiwia2VrX2lkIjoiYmZwX0dsNGV6V1BncGxJMnlFdERZRiIsIm10ZCI6IlBPU1QiLCJwdGgiOiIvZW1wbG95ZWUiLCJ2IjoxLCJ3aXYiOiJyQ2FWc2VxY0F0c1NxNG5wIiwid3RhZyI6Ik5NNTJzamhjdzRQWU5oMTNwQ3pTV0EiLCJ6aXAiOiJERUYifQ",
+      "response_message": "Request Successfully processed",
+      "response_value": "t0b0dUBkRqHFqnM0GsBqJSRSdasHzqKgBq9xc9yBg0DaUXOKDqQQDlgneBJq9atqUTHmCRkWfXqHzh7ktJUepyHG7f96YFoGU2PYnc76s4usa5WziqWKG-tHt3QQK4uaJu8ySwjg-N8PXq66JjFrWtA2Pr67-rWfZeJ67JlDhr816MHmqitYgBxCg1x9aCGQjKtHOrvHAR6zcBc",
+      "time_taken": 3.96,
+      "timestamp": "2026-09-25T16:14:08.980051+05:30"
+    }
+  },
+  "open": {
+    "response_key_label": {
+      "alg": "A256GCMKW",
+      "cid": "MERCH_ENCRYPTED",
+      "edek": "nesGFyCs8QxKg5uUsqrehqylhqLAXEQhHi6h-kvYSm0",
+      "enc": "A256GCM",
+      "iat": 1790333048,
+      "jti": "560cb9a23cdc4d408882c6f3f4de5c8f",
+      "kek_id": "bfp_Gl4ezWPgplI2yEtDYF",
+      "mtd": "POST",
+      "pth": "/employee",
+      "v": 1,
+      "wiv": "rCaVseqcAtsSq4np",
+      "wtag": "NM52sjhcw4PYNh13pCzSWA",
+      "zip": "DEF"
+    },
+    "response_dek_hex": "ea5b94baa455aaa897f6a5f0c80f5185ac37a77510596866782be7107348a736",
+    "plaintext": {
+      "response_data": {
+        "employee_information_master": {
+          "employee_full_name": "Asha Menon",
+          "employee_id": "EMP001",
+          "employee_mail_id": "asha.menon@example.invalid",
+          "status": "ACTIVE"
+        }
+      }
+    },
+    "response_key_chars": 414,
+    "response_value_chars": 207
+  },
+  "negative": [
+    {
+      "case": "Replay",
+      "what_we_did": "Sent the exact same request_value a second time",
+      "http": 400,
+      "code": "CRY409",
+      "message": "request_value already used"
+    },
+    {
+      "case": "Spliced label",
+      "what_we_did": "Label from request A on the iv, data and tag of request B",
+      "http": 400,
+      "code": "CRY422",
+      "message": "Payload could not be decrypted"
+    },
+    {
+      "case": "Edited label",
+      "what_we_did": "Changed iat inside the label by one second",
+      "http": 400,
+      "code": "CRY422",
+      "message": "Payload could not be decrypted"
+    },
+    {
+      "case": "Tampered data",
+      "what_we_did": "Changed two characters of the ciphertext",
+      "http": 400,
+      "code": "CRY422",
+      "message": "Payload could not be decrypted"
+    },
+    {
+      "case": "Wrong API",
+      "what_we_did": "Built for /policy, sent to /employee",
+      "http": 400,
+      "code": "CRY412",
+      "message": "Payload binding mismatch"
+    },
+    {
+      "case": "Wrong vendor",
+      "what_we_did": "Label says another vendor, token is MERCH_ENCRYPTED",
+      "http": 400,
+      "code": "CRY412",
+      "message": "Payload binding mismatch"
+    },
+    {
+      "case": "Unknown key",
+      "what_we_did": "kid that does not match today's key",
+      "http": 400,
+      "code": "CRY410",
+      "message": "Key expired or unknown"
+    },
+    {
+      "case": "Wrong key",
+      "what_we_did": "Encrypted with kek_response instead of the request key",
+      "http": 400,
+      "code": "CRY422",
+      "message": "Payload could not be decrypted"
+    },
+    {
+      "case": "Plain JSON",
+      "what_we_did": "Sent the JSON without encryption",
+      "http": 400,
+      "code": "CRY426",
+      "message": "This client must send request_value"
+    },
+    {
+      "case": "Old v2.0 shape",
+      "what_we_did": "Sent request_key beside request_value, as in v2.0",
+      "http": 400,
+      "code": "CRY400",
+      "message": "Malformed encrypted payload"
+    },
+    {
+      "case": "Extra field",
+      "what_we_did": "Added a plain field beside request_value",
+      "http": 400,
+      "code": "CRY400",
+      "message": "Malformed encrypted payload"
+    },
+    {
+      "case": "Malformed",
+      "what_we_did": "request_value with three parts instead of four",
+      "http": 400,
+      "code": "CRY400",
+      "message": "Malformed encrypted payload"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+# For the scripts in infra/scripts on your own machine.
+# Install:  python3 -m pip install -r infra/requirements-deploy.txt
+# Also needed, not pip packages: AWS CLI v2 and AWS SAM CLI.
+boto3>=1.34
+cryptography>=42
+requests>=2.31

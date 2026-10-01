@@ -1,0 +1,10 @@
+# Lambda runtime dependencies (go into the layer)
+cryptography==43.0.1
+urllib3==1.26.20        # 1.x for the AWS Lambda Python 3.12 runtime
+boto3==1.35.36
+
+# Local sandbox only
+flask==3.0.3
+moto[dynamodb,secretsmanager]==5.0.16
+requests==2.32.3
+pytest==8.3.3
