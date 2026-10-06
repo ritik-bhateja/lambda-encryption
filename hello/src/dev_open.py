@@ -1,8 +1,8 @@
 """DEV ONLY. Plays any vendor, with that vendor's key. NO API route: invoke only, IAM protected.
 
-    {"op": "seal_request", "vendor": "HELLO_VENDOR", "payload": {...}, "path": "/hello"}
+    {"op": "seal_request", "vendor": "TEST_VENDOR_UAT", "payload": {...}, "path": "/hello"}
         -> {"request_key": ...}
-    {"op": "open_reply", "vendor": "HELLO_VENDOR", "response_key": ..., "response_value": ...}
+    {"op": "open_reply", "vendor": "TEST_VENDOR_UAT", "response_key": ..., "response_value": ...}
         -> the decrypted reply
 
 A seal and open oracle for every vendor key it can read. Never give it an HTTP route.
@@ -18,7 +18,7 @@ def handler(event, context):
         event = json.loads(event["body"])
     op = event.get("op", "open_reply")
     try:
-        keys = get_vendor_keys(event.get("vendor") or "HELLO_VENDOR")
+        keys = get_vendor_keys(event.get("vendor") or "TEST_VENDOR_UAT")
         if op == "seal_request":
             payload = event.get("payload")
             if not isinstance(payload, dict):

@@ -2,6 +2,22 @@ AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: Hello Lambda behind an HTTP API. Encrypted request_key in, response_key + response_value out, both with the vendor's shared AES-256 key
 
+Parameters:
+  # Pre-created by an IAM admin so the deploy role needs no iam:*RolePolicy permissions.
+  # Each role must allow lambda.amazonaws.com to assume it, carry AWSLambdaBasicExecutionRole
+  # for logs, and hold the inline permissions noted below.
+  HelloFunctionRoleArn:
+    Type: String
+    Description: >-
+      ARN of the execution role for the main function. Needs:
+      secretsmanager:GetSecretValue on secret:empower_care_lambda_encryption/*,
+      and dynamodb:PutItem on the empower_care_lambda_encryption-nonce table.
+  HelloOpenFunctionRoleArn:
+    Type: String
+    Description: >-
+      ARN of the execution role for the dev-open function. Needs:
+      secretsmanager:GetSecretValue on secret:empower_care_lambda_encryption/*.
+
 Globals:
   Function:
     Runtime: python3.12
@@ -12,15 +28,15 @@ Globals:
     Environment:
       Variables:
         # One secret per vendor. The X-Vendor-Id header picks which one.
-        PAYLOAD_KEY_SECRET_TEMPLATE: hello-udit-test/{vendor}/response-key
+        PAYLOAD_KEY_SECRET_TEMPLATE: empower_care_lambda_encryption/{vendor}/response-key
         PAYLOAD_NONCE_TABLE: !Ref NonceTable
 
 Resources:
   VendorKeySecret:
     Type: AWS::SecretsManager::Secret
     Properties:
-      Name: hello-udit-test/HELLO_VENDOR/response-key
-      Description: Shared AES-256 response key for HELLO_VENDOR. The vendor holds a copy. Never print or log it.
+      Name: empower_care_lambda_encryption/TEST_VENDOR_UAT/response-key
+      Description: Shared AES-256 response key for TEST_VENDOR_UAT. The vendor holds a copy. Never print or log it.
       GenerateSecretString:
         SecretStringTemplate: "{}"
         GenerateStringKey: key_hex
@@ -30,15 +46,15 @@ Resources:
         ExcludeUppercase: true
         ExcludeCharacters: ghijklmnopqrstuvwxyz
       Tags:
-        - { Key: Name, Value: hello-udit-test-vendor-key }
+        - { Key: Name, Value: empower_care_lambda_encryption-vendor-key }
         - { Key: Environment, Value: development }
-        - { Key: Owner, Value: udit.mittal }
+        - { Key: Owner, Value: empower_care_lambda_encryption }
         - { Key: Project, Value: empower-care }
 
   NonceTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: hello-udit-test-nonce
+      TableName: empower_care_lambda_encryption-nonce
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - { AttributeName: nonce_id, AttributeType: S }
@@ -48,15 +64,15 @@ Resources:
         AttributeName: ttl_epoch
         Enabled: true
       Tags:
-        - { Key: Name, Value: hello-udit-test-nonce }
+        - { Key: Name, Value: empower_care_lambda_encryption-nonce }
         - { Key: Environment, Value: development }
-        - { Key: Owner, Value: udit.mittal }
+        - { Key: Owner, Value: empower_care_lambda_encryption }
         - { Key: Project, Value: empower-care }
 
   CryptoLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
-      LayerName: hello-udit-test-payload-crypto
+      LayerName: empower_care_lambda_encryption-payload-crypto
       ContentUri: ../payload-crypto/.build/layer
       CompatibleRuntimes: [python3.12]
       CompatibleArchitectures: [x86_64]
@@ -64,21 +80,15 @@ Resources:
   HelloFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: hello-udit-test
+      FunctionName: empower_care_lambda_encryption
       CodeUri: src/
       Layers: [!Ref CryptoLayer]
-      Policies:
-        - Statement:
-            - Effect: Allow
-              Action: secretsmanager:GetSecretValue
-              Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:hello-udit-test/*"
-            - Effect: Allow
-              Action: dynamodb:PutItem
-              Resource: !GetAtt NonceTable.Arn
+      # Pre-created role (see Parameters). SAM manages no inline policy here.
+      Role: !Ref HelloFunctionRoleArn
       Tags:
-        Name: hello-udit-test
+        Name: empower_care_lambda_encryption
         Environment: development
-        Owner: udit.mittal
+        Owner: empower_care_lambda_encryption
         Project: empower-care
       Events:
         Hello:
@@ -90,20 +100,17 @@ Resources:
   HelloOpenFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: hello-udit-test-open
+      FunctionName: empower_care_lambda_encryption-open
       Description: DEV ONLY. Seals hello requests and opens replies with the shared key. Invoke only, no API route
       CodeUri: src/
       Handler: dev_open.handler
       Layers: [!Ref CryptoLayer]
-      Policies:
-        - Statement:
-            - Effect: Allow
-              Action: secretsmanager:GetSecretValue
-              Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:hello-udit-test/*"
+      # Pre-created role (see Parameters). SAM manages no inline policy here.
+      Role: !Ref HelloOpenFunctionRoleArn
       Tags:
-        Name: hello-udit-test-open
+        Name: empower_care_lambda_encryption-open
         Environment: development
-        Owner: udit.mittal
+        Owner: empower_care_lambda_encryption
         Project: empower-care
 
 Outputs:
@@ -112,4 +119,4 @@ Outputs:
   OpenFunctionName:
     Value: !Ref HelloOpenFunction
   VendorKeySecretName:
-    Value: hello-udit-test/HELLO_VENDOR/response-key
+    Value: empower_care_lambda_encryption/TEST_VENDOR_UAT/response-key

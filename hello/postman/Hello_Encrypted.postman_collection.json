@@ -1,17 +1,17 @@
 {
   "info": {
-    "name": "Hello Encrypted (hello-udit-test)",
-    "description": "POST /hello behind payload_crypto. Write plain JSON in the Body tab. The request's Pre-request script adds X-Vendor-Id: {{vendor_id}} and seals the body into {\"request_key\": ...}; the Post-response script opens {response_key, response_value}. Both show in the Visualize tab.\n\nBefore running set the collection variables vendor_id (HELLO_VENDOR) and vendor_key_hex (64 hex chars, Secrets Manager hello-udit-test/HELLO_VENDOR/response-key). Do not share or export the collection once the key is in it.",
+    "name": "Hello Encrypted (empower_care_lambda_encryption)",
+    "description": "POST /hello behind payload_crypto. Write plain JSON in the Body tab. The request's Pre-request script adds X-Vendor-Id: {{vendor_id}} and seals the body into {\"request_key\": ...}; the Post-response script opens {response_key, response_value}. Both show in the Visualize tab.\n\nBefore running set the collection variables vendor_id (TEST_VENDOR_UAT) and vendor_key_hex (64 hex chars, Secrets Manager empower_care_lambda_encryption/TEST_VENDOR_UAT/response-key). Do not share or export the collection once the key is in it.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
-      "key": "hello_url",
-      "value": "https://ddhfh85sn4.execute-api.ap-south-1.amazonaws.com/hello"
+      "key": "api_url",
+      "value": "https://9rdxue3ggk.execute-api.ap-south-1.amazonaws.com/hello"
     },
     {
       "key": "vendor_id",
-      "value": "HELLO_VENDOR"
+      "value": "TEST_VENDOR_UAT"
     },
     {
       "key": "vendor_key_hex",
@@ -23,7 +23,7 @@
     },
     {
       "key": "name",
-      "value": "udit"
+      "value": "care"
     },
     {
       "key": "plain_request",
@@ -62,7 +62,7 @@
             }
           }
         },
-        "url": "{{hello_url}}"
+        "url": "{{api_url}}"
       },
       "event": [
         {
@@ -107,7 +107,7 @@
               "  const h = pm.request.headers.find(x => x.key && x.key.toLowerCase() === VENDOR_HEADER.toLowerCase() && !x.disabled);",
               "  return h ? pm.variables.replaceIn(h.value || '').trim() : '';",
               "};",
-              "const CLIENT_REF = _headerVendor() || _var('vendor_id') || 'HELLO_VENDOR';",
+              "const CLIENT_REF = _headerVendor() || _var('vendor_id') || 'TEST_VENDOR_UAT';",
               "const KEY_ID = _var('vendor_key_id') || (CLIENT_REF + '-v1');",
               "const MAX_PLAINTEXT_BYTES = 10 * 1024 * 1024;",
               "",
@@ -424,7 +424,7 @@
               "// ----------------------------------------------------------------- Postman ----",
               "",
               "// The API path the label must carry, from the URL with {{variables}} resolved.",
-              "// Before the request is sent, pm.request.url may still be \"{{hello_url}}\".",
+              "// Before the request is sent, pm.request.url may still be \"{{api_url}}\".",
               "function requestPath() {",
               "  const url = pm.variables.replaceIn(pm.request.url.toString());",
               "  const m = url.match(/^[a-z]+:\\/\\/[^\\/?#]+([^?#]*)/i);",
@@ -537,7 +537,7 @@
               "  const h = pm.request.headers.find(x => x.key && x.key.toLowerCase() === VENDOR_HEADER.toLowerCase() && !x.disabled);",
               "  return h ? pm.variables.replaceIn(h.value || '').trim() : '';",
               "};",
-              "const CLIENT_REF = _headerVendor() || _var('vendor_id') || 'HELLO_VENDOR';",
+              "const CLIENT_REF = _headerVendor() || _var('vendor_id') || 'TEST_VENDOR_UAT';",
               "const KEY_ID = _var('vendor_key_id') || (CLIENT_REF + '-v1');",
               "const MAX_PLAINTEXT_BYTES = 10 * 1024 * 1024;",
               "",
@@ -854,7 +854,7 @@
               "// ----------------------------------------------------------------- Postman ----",
               "",
               "// The API path the label must carry, from the URL with {{variables}} resolved.",
-              "// Before the request is sent, pm.request.url may still be \"{{hello_url}}\".",
+              "// Before the request is sent, pm.request.url may still be \"{{api_url}}\".",
               "function requestPath() {",
               "  const url = pm.variables.replaceIn(pm.request.url.toString());",
               "  const m = url.match(/^[a-z]+:\\/\\/[^\\/?#]+([^?#]*)/i);",
