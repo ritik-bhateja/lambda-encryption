@@ -3,7 +3,7 @@
     export VENDOR_ID=ACME
     export VENDOR_KEY_HEX=...          # your 64 hex character key
     export VENDOR_KEY_ID=ACME-v1       # optional, defaults to <VENDOR_ID>-v1
-    python vendor_client.py https://api.example.com/hello '{"name": "udit"}'
+    python vendor_client.py https://api.example.com/hello '{"name": "care"}'
     python vendor_client.py https://api.example.com/items/7 GET
 
 Request: header X-Vendor-Id: <vendor>

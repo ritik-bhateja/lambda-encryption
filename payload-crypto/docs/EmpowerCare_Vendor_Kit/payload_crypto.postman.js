@@ -35,7 +35,7 @@ const _headerVendor = () => {
   const h = pm.request.headers.find(x => x.key && x.key.toLowerCase() === VENDOR_HEADER.toLowerCase() && !x.disabled);
   return h ? pm.variables.replaceIn(h.value || '').trim() : '';
 };
-const CLIENT_REF = _headerVendor() || _var('vendor_id') || 'HELLO_VENDOR';
+const CLIENT_REF = _headerVendor() || _var('vendor_id') || 'TEST_VENDOR_UAT';
 const KEY_ID = _var('vendor_key_id') || (CLIENT_REF + '-v1');
 const MAX_PLAINTEXT_BYTES = 10 * 1024 * 1024;
 
@@ -352,7 +352,7 @@ function sealRequest(payload, keyHex, path, method) {
 // ----------------------------------------------------------------- Postman ----
 
 // The API path the label must carry, from the URL with {{variables}} resolved.
-// Before the request is sent, pm.request.url may still be "{{hello_url}}".
+// Before the request is sent, pm.request.url may still be "{{api_url}}".
 function requestPath() {
   const url = pm.variables.replaceIn(pm.request.url.toString());
   const m = url.match(/^[a-z]+:\/\/[^\/?#]+([^?#]*)/i);

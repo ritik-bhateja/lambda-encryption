@@ -112,10 +112,10 @@ def err(out):
 # ------------------------------------------------------------------ shapes ----
 
 def test_http_api_round_trip_keeps_status_and_headers(aws):
-    out = proxy_handler(http_api_event("ACME", seal(aws, "ACME", {"name": "udit"})), None)
+    out = proxy_handler(http_api_event("ACME", seal(aws, "ACME", {"name": "care"})), None)
     assert out["statusCode"] == 201 and out["headers"]["X-Trace"] == "t1"
-    assert "udit" not in out["body"]
-    assert open_proxy(out, aws["ACME"]) == {"hello": "udit", "seen": {"name": "udit"}}
+    assert "care" not in out["body"]
+    assert open_proxy(out, aws["ACME"]) == {"hello": "care", "seen": {"name": "care"}}
 
 
 def test_http_api_named_stage_is_stripped(aws):
