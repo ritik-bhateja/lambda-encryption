@@ -69,20 +69,36 @@ Resources:
         - { Key: Owner, Value: empower_care_lambda_encryption }
         - { Key: Project, Value: empower-care }
 
-  CryptoLayer:
+  # Layer 1: cryptography wheels (the dependency)
+  CryptographyLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: empower_care_lambda_encryption-cryptography
+      Description: cryptography 43.0.1 wheels for python3.12 x86_64
+      ContentUri: ../payload-crypto/.build/layer-deps
+      CompatibleRuntimes: [python3.12]
+      CompatibleArchitectures: [x86_64]
+      RetentionPolicy: Retain
+
+  # Layer 2: payload_crypto.py (consumes Layer 1 at runtime)
+  PayloadCryptoLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
       LayerName: empower_care_lambda_encryption-payload-crypto
-      ContentUri: ../payload-crypto/.build/layer
+      Description: payload_crypto decorator — requires the cryptography layer
+      ContentUri: ../payload-crypto/.build/layer-code
       CompatibleRuntimes: [python3.12]
       CompatibleArchitectures: [x86_64]
+      RetentionPolicy: Retain
 
   HelloFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: empower_care_lambda_encryption
       CodeUri: src/
-      Layers: [!Ref CryptoLayer]
+      Layers:
+        - !Ref CryptographyLayer   # Layer 1: cryptography wheels
+        - !Ref PayloadCryptoLayer  # Layer 2: payload_crypto.py (imports from Layer 1)
       # Pre-created role (see Parameters). SAM manages no inline policy here.
       Role: !Ref HelloFunctionRoleArn
       Tags:
@@ -104,7 +120,9 @@ Resources:
       Description: DEV ONLY. Seals hello requests and opens replies with the shared key. Invoke only, no API route
       CodeUri: src/
       Handler: dev_open.handler
-      Layers: [!Ref CryptoLayer]
+      Layers:
+        - !Ref CryptographyLayer   # Layer 1: cryptography wheels
+        - !Ref PayloadCryptoLayer  # Layer 2: payload_crypto.py (imports from Layer 1)
       # Pre-created role (see Parameters). SAM manages no inline policy here.
       Role: !Ref HelloOpenFunctionRoleArn
       Tags:
