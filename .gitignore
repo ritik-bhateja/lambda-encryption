@@ -32,3 +32,4 @@ samconfig.local.toml
 
 # Office temp files
 ~$*
+.build-venv

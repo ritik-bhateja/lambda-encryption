@@ -1,0 +1,13 @@
+# payload_crypto Lambda layer dependencies.
+#
+# Only cryptography is bundled. boto3/botocore are provided by the Lambda
+# python3.12 runtime and must NOT be vendored here.
+#
+# Pinned to the exact version the layer is built and tested against.
+# Install the Linux x86_64 / cp312 wheel so it matches the Lambda runtime:
+#
+#   pip install --target python \
+#     --platform manylinux2014_x86_64 --implementation cp \
+#     --python-version 3.12 --only-binary=:all: -r requirements.txt
+#
+cryptography==43.0.1
